@@ -1,0 +1,275 @@
+# 加载必要的库
+library(rjags)
+library(coda)
+library(ggplot2)
+
+# 读取数据
+data <- read.table("vin.txt", header = TRUE)
+I <- 9
+J <- 5
+
+# 准备JAGS数据
+effect <- matrix(data$effect, nrow = I, ncol = J)
+initial_data <- list(effect = effect, I = I, J = J)
+
+# 定义要提取的参数
+pm <- c("M", "mu", "tau", "tau_0")
+
+# JAGS模型路径
+model_file_path_1 <- "C:\\Users\\13791\\OneDrive\\文档\\model_1.txt"
+
+# 运行模型
+jagsModel <- jags.model(file = model_file_path_1, data = initial_data)
+
+# MCMC采样
+sample <- coda.samples(jagsModel, variable.names = pm, n.iter = 5000)
+#############################################################
+ess <- effectiveSize(sample)
+
+ess_delete_mu1 <- ess[names(ess) != "mu[1]"]
+
+
+max <- names(which.max(ess_delete_mu1))
+min<- names(which.min(ess_delete_mu1))
+
+param_samples1 <- sample[[1]][, max]
+
+param_samples2 <- sample[[1]][, min]
+
+traceplot(param_samples1)
+
+
+
+
+
+traceplot(param_samples2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 将样本转换为矩阵格式
+sm_matrix <- as.matrix(sample)
+mu_samples <- as.matrix(sample[, grep("mu\\[", colnames(sm_matrix))])
+M_samples <- as.matrix(sample[, grep("M\\[", colnames(sm_matrix))])
+
+# 计算每对mu和M的乘积的平均值
+effect_1 <- matrix(ncol = I, nrow = J)
+for (i in 1:I) {
+  for (j in 1:J) {
+    effect_1[j, i] <- mean(M_samples[, j] * mu_samples[, i])
+  }
+}
+
+result_df <- data.frame()
+
+# 循环计算置信区间并添加到数据框中
+for (i in 1:I) {
+  for (j in 1:J) {
+    product_samples <- M_samples[, j] * mu_samples[, i]
+    ci <- quantile(product_samples, probs = c(0.025, 0.975))
+    
+    # 创建一个包含 dose_index、run_index、lower_ci_1 和 upper_ci_1 的数据框
+    row_data <- data.frame(
+      dose_index = i,
+      run_index = j,
+      lower_ci_1 = ci[1],
+      upper_ci_1 = ci[2]
+    )
+    
+    # 将当前计算的置信区间数据添加到结果数据框中
+    result_df <- rbind(result_df, row_data)
+  }
+}
+# 按照 dose_index 和 run_index 进行排序
+sorted_result_df <- result_df[order(result_df$run_index, rep(1:J, I)), ]
+
+
+# 重新设置行号
+rownames(sorted_result_df) <- NULL
+
+
+
+
+# 将 effect_1 矩阵转换为一个按行优先的向量
+effect_1_vector <- c(t(effect_1))
+
+# 将这个向量作为新列添加到 sorted_result_df 数据框中
+sorted_result_df$mean_value <- effect_1_vector
+
+# 查看结果
+print(sorted_result_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+p <- ggplot() +
+ 
+  geom_point(data = data, aes(x =sorted_result_df$dose_index, y = effect,
+                              color = as.factor(exper), shape = as.factor(data$exper))) +
+
+  geom_line(data = sorted_result_df, aes(x = dose_index, y = mean_value,
+                                           color = as.factor(data$exper))) +
+  
+  # Plotting the confidence interval for the effect
+  geom_ribbon(data = sorted_result_df, aes(x = dose_index, ymin = lower_ci_1, 
+                                             ymax = upper_ci_1, group = run_index, 
+                                             fill = as.factor(data$exper)), alpha = 0.3) +
+  
+ 
+ 
+  labs(x = "dose_index", y = "effect", color = "Experimental Run", 
+       fill = "Experimental Run", shape = "Experimental Run")
+       
+  
+  
+# Display chart
+print(p)
+
+
+
+######################################################################
+# JAGS模型路径
+model_file_path_2 <- "C:\\Users\\13791\\OneDrive\\文档\\model_2.txt"
+
+# 运行模型
+jagsModel <- jags.model(file = model_file_path_2, data = initial_data)
+
+# MCMC采样
+sample <- coda.samples(jagsModel, variable.names = pm, n.iter = 5000)
+
+
+
+sm_matrix <- as.matrix(sample)
+mu_samples <- as.matrix(sample[, grep("mu\\[", colnames(sm_matrix))])
+M_samples <- as.matrix(sample[, grep("M\\[", colnames(sm_matrix))])
+
+# 计算每对mu和M的乘积的平均值
+# 计算每对mu和M的乘积的平均值
+effect_1 <- matrix(ncol = I, nrow = J)
+for (i in 1:I) {
+  for (j in 1:J) {
+    mu_col_name <- paste("mu[", j, ",", i, "]", sep="")
+    effect_1[j, i] <- mean(M_samples[, j] * mu_samples[, mu_col_name])
+  }
+}
+
+
+result_df <- data.frame()
+
+# 循环计算置信区间并添加到数据框中
+for (i in 1:I) {
+  for (j in 1:J) {
+    
+    mu_col_name <- paste("mu[", j, ",", i, "]", sep="")
+    
+    # 提取对应的列
+    M_col <- M_samples[, j]
+    mu_col <- mu_samples[, mu_col_name]
+    
+    # 计算乘积
+    product_samples <- M_col * mu_col
+    
+    ci <- quantile(product_samples, probs = c(0.025, 0.975))
+    
+    # 创建一个包含 dose_index、run_index、lower_ci_1 和 upper_ci_1 的数据框
+    row_data <- data.frame(
+      dose_index = i,
+      run_index = j,
+      lower_ci_1 = ci[1],
+      upper_ci_1 = ci[2]
+    )
+    
+    # 将当前计算的置信区间数据添加到结果数据框中
+    result_df <- rbind(result_df, row_data)
+  }
+}
+# 按照 dose_index 和 run_index 进行排序
+sorted_result_df <- result_df[order(result_df$run_index, rep(1:J, I)), ]
+
+
+# 重新设置行号
+rownames(sorted_result_df) <- NULL
+
+
+
+
+# 将 effect_1 矩阵转换为一个按行优先的向量
+effect_1_vector <- c(t(effect_1))
+
+# 将这个向量作为新列添加到 sorted_result_df 数据框中
+sorted_result_df$mean_value <- effect_1_vector
+
+# 查看结果
+print(sorted_result_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+p <- ggplot() +
+  
+  geom_point(data = data, aes(x =sorted_result_df$dose_index, y = effect,
+                              color = as.factor(exper), shape = as.factor(exper))) +
+  
+  geom_line(data = sorted_result_df, aes(x = dose_index, y = mean_value,
+                                         color = as.factor(data$exper))) +
+  
+  # Plotting the confidence interval for the effect
+  geom_ribbon(data = sorted_result_df, aes(x = dose_index, ymin = lower_ci_1, 
+                                           ymax = upper_ci_1, group = run_index, 
+                                           fill = as.factor(data$exper)), alpha = 0.3) +
+  
+  
+  
+  labs(x = "dose_index", y = "effect", color = "Experimental Run", 
+       fill = "Experimental Run", shape = "Experimental Run") 
+       
+       
+       
+       # Display chart
+       print(p)
+####################################################################
+Model1 <- jags.model(file = model_file_path_1,
+                                data = initial_data, n.chains = 2)
+Model2 <- jags.model(file = model_file_path_2,
+                                data = initial_data, n.chains = 2)
+
+dic.samples(Model1,n.iter=10000)
+dic.samples(Model2,n.iter=10000)
+       
+    
+
